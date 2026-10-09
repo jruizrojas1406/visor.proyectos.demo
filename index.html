@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Visor de Proyectos de Infraestructura Pública</title>
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <!-- Lucide Icons -->
+        <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+        <!-- Leaflet CSS & JS -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+        <!-- Estilos Locales -->
+        <link rel="stylesheet" href="css/variables.css" />
+        <link rel="stylesheet" href="css/styles.css" />
+        <link rel="stylesheet" href="css/pdf-viewer.css" />
+
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: 'Inter', sans-serif;
+                letter-spacing: -0.01em;
+                background: #0f172a;
+                overflow: hidden;
+            }
+
+            /* Leaflet custom map pane and controls reset */
+            .leaflet-container {
+                font-family: inherit;
+                background: #0f172a;
+            }
+
+            .custom-scrollbar::-webkit-scrollbar {
+                width: 6px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+                background: rgba(241, 245, 249, 0.6);
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: rgba(148, 163, 184, 0.8);
+                border-radius: 9999px;
+            }
+
+            .modern-map-tooltip {
+                background: rgba(255, 255, 255, 0.98);
+                backdrop-filter: blur(8px);
+                border: 1px solid rgba(226, 232, 240, 0.9);
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+                border-radius: 12px;
+                padding: 4px;
+            }
+            .modern-map-tooltip::before {
+                display: none;
+            }
+        </style>
+    </head>
+
+    <body class="min-h-screen relative overflow-hidden text-slate-800">
+        <!-- Contenedor del Mapa -->
+        <div id="viewDiv" class="absolute inset-0 w-full h-full z-0"></div>
+
+        <!-- Barra de Navegación Superior Ejecutiva (Glassmorphism) -->
+        <header
+            class="absolute top-4 left-4 right-4 z-30 flex items-center justify-between gap-4 pointer-events-none"
+        >
+            <!-- Logo y Título -->
+            <div
+                class="glass-panel rounded-2xl p-2.5 shadow-2xl border border-white/40 flex items-center gap-3.5 pointer-events-auto"
+            >
+                <div
+                    class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-700 flex items-center justify-center shadow-md text-white"
+                >
+                    <i data-lucide="building-2" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1
+                            class="text-sm font-extrabold text-slate-900 leading-none tracking-tight"
+                        >
+                            VISOR DE PROYECTOS
+                        </h1>
+                    </div>
+                    <p class="text-[11px] font-semibold text-slate-500 leading-tight mt-0.5">
+                        Seguimiento de Infraestructura y Obras Públicas
+                    </p>
+                </div>
+            </div>
+
+            <!-- Selector Rápido de Región, Proyectos y Estadísticas de Estado -->
+            <div
+                class="glass-panel rounded-2xl px-3 py-1.5 shadow-2xl border border-white/40 flex items-center gap-2.5 pointer-events-auto hidden md:flex"
+            >
+                <!-- 1. Filtro Rápido por Región / Departamento -->
+                <div class="flex items-center gap-1.5 border-r border-slate-200/80 pr-2.5">
+                    <span class="text-xs font-bold text-slate-600 flex items-center gap-1">
+                        <i
+                            data-lucide="compass"
+                            class="w-3.5 h-3.5 text-blue-600 animate-spin-slow"
+                        ></i>
+                        Región:
+                    </span>
+                    <select
+                        id="quick-region-dropdown"
+                        onchange="flyToRegion(this.value)"
+                        class="text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer hover:border-blue-400 transition"
+                    >
+                        <option value="all">🇵🇪 Todas las Regiones (3)</option>
+                        <option value="Lambayeque">🌊 Lambayeque (1)</option>
+                        <option value="Lima">🏙️ Lima (1)</option>
+                        <option value="Ancash">🏔️ Áncash (1)</option>
+                    </select>
+                </div>
+
+                <!-- 2. Acceso Directo por Proyecto -->
+                <div class="flex items-center gap-1.5 border-r border-slate-200/80 pr-2.5">
+                    <span class="text-xs font-bold text-slate-600 flex items-center gap-1">
+                        <i data-lucide="folder-kanban" class="w-3.5 h-3.5 text-blue-600"></i>
+                        Proyecto:
+                    </span>
+                    <select
+                        id="quick-project-dropdown"
+                        class="text-xs font-semibold bg-white/90 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[270px]"
+                    >
+                        <option value="" disabled selected>⚡ Seleccione un proyecto...</option>
+                        <option value="5021">
+                            C.S. Fernando Carbajal Segura - Lambayeque (Concluido)
+                        </option>
+                        <option value="4747">
+                            C.S. Villa María del Triunfo - Lima (En Ejecución)
+                        </option>
+                        <option value="3892">E.S. Progreso - Ancash (Programado)</option>
+                    </select>
+                </div>
+
+                <!-- 3. Filtro por Estado de Obra (Select Compacto) -->
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-bold text-slate-600 flex items-center gap-1">
+                        <i data-lucide="activity" class="w-3.5 h-3.5 text-blue-600"></i>
+                        Estado:
+                    </span>
+                    <select
+                        id="quick-status-dropdown"
+                        onchange="filterByStatusClick(this.value)"
+                        class="text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer hover:border-blue-400 transition"
+                    >
+                        <option value="all">⚡ Todos (3)</option>
+                        <option value="concluded">🟣 Concluido (1)</option>
+                        <option value="execution">🟢 En Ejecución (1)</option>
+                        <option value="programmed">🟡 Programado (1)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Selector de Capas Base (Satelital Activo por Defecto) -->
+            <div
+                class="glass-panel rounded-2xl p-1.5 shadow-2xl border border-white/40 flex items-center gap-1 pointer-events-auto"
+            >
+                <button
+                    id="basemap-satellite-btn"
+                    onclick="switchBasemap('satellite')"
+                    class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                    title="Vista Satelital Híbrida de Alta Resolución (Activo)"
+                >
+                    <i data-lucide="satellite" class="w-3.5 h-3.5"></i>
+                    <span>Satelital</span>
+                </button>
+                <button
+                    id="basemap-osm-btn"
+                    onclick="switchBasemap('osm')"
+                    class="px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-white/80 transition flex items-center gap-1.5 cursor-pointer"
+                    title="Mapa Abierto OpenStreetMap"
+                >
+                    <i data-lucide="globe" class="w-3.5 h-3.5"></i>
+                    <span>OpenStreetMap</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Controles Flotantes del Mapa (Zoom, Home, Capas, Búsqueda) -->
+        <div class="absolute left-4 top-24 z-20 flex flex-col gap-2 map-button-control">
+            <div
+                class="glass-panel p-1 rounded-2xl shadow-xl border border-white/40 flex flex-col gap-1"
+            >
+                <button
+                    class="circular-btn btn-zoom-in w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Acercar"
+                >
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                </button>
+                <button
+                    class="circular-btn btn-zoom-out w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Alejar"
+                >
+                    <i data-lucide="minus" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div
+                class="glass-panel p-1 rounded-2xl shadow-xl border border-white/40 flex flex-col gap-1"
+            >
+                <button
+                    class="circular-btn btn-home w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Vista General del Perú"
+                >
+                    <i data-lucide="home" class="w-4 h-4"></i>
+                </button>
+                <button
+                    class="circular-btn btn-layers w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Panel de Capas"
+                >
+                    <i data-lucide="layers" class="w-4 h-4"></i>
+                </button>
+                <button
+                    class="circular-btn btn-search w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Buscador de Proyectos"
+                >
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
+                <button
+                    class="circular-btn btn-panel-toggle w-9 h-9 rounded-xl flex items-center justify-center hover:bg-blue-50 text-slate-700 transition"
+                    title="Panel de Información"
+                >
+                    <i data-lucide="panel-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Barra de Búsqueda Flotante -->
+        <div
+            id="search-container"
+            class="search-container absolute top-24 left-16 z-20 space-y-3"
+            style="display: none"
+        >
+            <div
+                class="glass-panel rounded-2xl shadow-2xl border border-white/40 overflow-hidden w-96"
+            >
+                <div
+                    class="flex items-center justify-between p-3 bg-white/95 border-b border-gray-200/60"
+                >
+                    <div class="flex items-center gap-2">
+                        <div
+                            class="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm"
+                        >
+                            <i data-lucide="search" class="w-3.5 h-3.5 text-white"></i>
+                        </div>
+                        <span class="text-xs font-bold text-slate-800">Búsqueda de Proyectos</span>
+                    </div>
+                    <button
+                        id="close-search-panel-btn"
+                        class="w-6 h-6 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500 flex items-center justify-center transition"
+                    >
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+
+                <div class="p-3">
+                    <div class="relative">
+                        <input
+                            type="text"
+                            id="map-search-input"
+                            placeholder="Buscar por código, nombre, departamento..."
+                            class="w-full pl-9 pr-8 py-2.5 bg-white/90 border border-slate-200 rounded-xl text-xs font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-sm transition"
+                        />
+                        <div class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                        </div>
+                        <button
+                            id="search-clear-btn"
+                            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            style="display: none"
+                        >
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+
+                    <!-- Chips de filtro de estado -->
+                    <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+                        <button
+                            class="quick-filter-chip quick-filter-status active text-[11px] px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1"
+                            data-filter="all"
+                            data-value="all"
+                        >
+                            <span>Todos</span>
+                        </button>
+                        <button
+                            class="quick-filter-chip quick-filter-status text-[11px] px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1"
+                            data-filter="concluded"
+                            data-value="concluded"
+                        >
+                            <span class="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                            <span>Concluido</span>
+                        </button>
+                        <button
+                            class="quick-filter-chip quick-filter-status text-[11px] px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1"
+                            data-filter="execution"
+                            data-value="execution"
+                        >
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>En Ejecución</span>
+                        </button>
+                        <button
+                            class="quick-filter-chip quick-filter-status text-[11px] px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1"
+                            data-filter="programmed"
+                            data-value="programmed"
+                        >
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            <span>Programado</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Desplegable de Resultados -->
+                <div
+                    id="search-results-dropdown"
+                    class="border-t border-slate-200/80 bg-white/98 max-h-72 overflow-y-auto hidden"
+                >
+                    <div id="search-results-list" class="p-2 divide-y divide-slate-100"></div>
+                    <div
+                        id="search-footer"
+                        class="p-2.5 bg-slate-50 border-t border-slate-200/80 text-[11px] text-slate-500 flex justify-between items-center"
+                    >
+                        <span id="results-count">0 resultados</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Capas -->
+        <div id="layers-panel" class="layers-panel-container z-20">
+            <div class="layers-panel-content">
+                <div class="layers-panel-header">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div
+                                class="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center text-white"
+                            >
+                                <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+                            </div>
+                            <h3 class="text-xs font-bold text-slate-800">Gestión de Capas</h3>
+                        </div>
+                        <button
+                            id="toggle-layers-panel"
+                            class="w-6 h-6 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-500"
+                        >
+                            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="layers-section">
+                    <label class="layers-section-label">Estado de Obra</label>
+                    <div class="layers-list">
+                        <div class="layer-item">
+                            <div class="layer-toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layer-concluded"
+                                    class="layer-checkbox"
+                                    value="concluded"
+                                    checked
+                                />
+                                <label for="layer-concluded" class="layer-label">
+                                    <div class="layer-indicator concluded"></div>
+                                    <span class="layer-name">Concluido</span>
+                                    <span class="layer-count" id="layer-concluded-count">1</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="layer-item">
+                            <div class="layer-toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layer-execution"
+                                    class="layer-checkbox"
+                                    value="execution"
+                                    checked
+                                />
+                                <label for="layer-execution" class="layer-label">
+                                    <div class="layer-indicator execution"></div>
+                                    <span class="layer-name">En Ejecución</span>
+                                    <span class="layer-count" id="layer-execution-count">1</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="layer-item">
+                            <div class="layer-toggle">
+                                <input
+                                    type="checkbox"
+                                    id="layer-programmed"
+                                    class="layer-checkbox"
+                                    value="programmed"
+                                    checked
+                                />
+                                <label for="layer-programmed" class="layer-label">
+                                    <div class="layer-indicator programmed"></div>
+                                    <span class="layer-name">Programado</span>
+                                    <span class="layer-count" id="layer-programmed-count">1</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="layers-section">
+                    <div class="layer-controls">
+                        <button id="show-all-layers" class="layer-control-btn show primary">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                            Activar Todas
+                        </button>
+                        <button id="hide-all-layers" class="layer-control-btn hide secondary">
+                            <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+                            Desactivar Todas
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Información del Proyecto Seleccionado (Slide-over Modern Executive Panel) -->
+        <aside
+            id="project-panel"
+            class="absolute top-20 right-4 w-[450px] max-h-[calc(100vh-6rem)] overflow-y-auto custom-scrollbar z-30 transition-all duration-300"
+            style="display: none; opacity: 0; transform: translateX(80px) scale(0.95)"
+        >
+            <div
+                class="glass-panel rounded-3xl overflow-hidden shadow-2xl border border-white/60 backdrop-blur-2xl bg-white/95 text-slate-800"
+            >
+                <!-- Hero Header con Portada Fotográfica y Degradado -->
+                <div class="relative h-44 w-full bg-slate-900 overflow-hidden">
+                    <img
+                        id="project-cover-img"
+                        src="https://images.unsplash.com/photo-1587351021759-3e566b6af7cc?w=800&auto=format&fit=crop&q=80"
+                        alt="Portada de proyecto"
+                        class="w-full h-full object-cover object-center transform transition-transform duration-700 hover:scale-105"
+                    />
+                    <div
+                        class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-black/30"
+                    ></div>
+
+                    <!-- Acciones Superiores Flotantes (Badge Estado + Cerrar/Minimizar) -->
+                    <div class="absolute top-3 inset-x-3 flex items-center justify-between z-10">
+                        <div
+                            id="project-status-badge"
+                            class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-lg backdrop-blur-md bg-white/90 text-purple-700 border border-white/40"
+                        >
+                            <span class="w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
+                            <span id="project-status">Concluido</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button
+                                class="minimize-btn w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md flex items-center justify-center transition border border-white/20 shadow-md"
+                                title="Minimizar"
+                            >
+                                <i data-lucide="minimize-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button
+                                id="close-header-panel-btn"
+                                class="close-btn w-8 h-8 rounded-full bg-black/40 hover:bg-red-600/90 text-white backdrop-blur-md flex items-center justify-center transition border border-white/20 shadow-md"
+                                title="Cerrar"
+                            >
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Título y Localización en la base del Hero -->
+                    <div class="absolute bottom-3 inset-x-4 text-white z-10">
+                        <div
+                            class="flex items-center gap-1.5 text-[11px] font-medium text-blue-200/90 mb-1"
+                        >
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-blue-300"></i>
+                            <span id="project-area" class="truncate">Lambayeque, Chiclayo</span>
+                        </div>
+                        <h2
+                            class="text-base font-extrabold text-white tracking-tight line-clamp-2 leading-snug drop-shadow-sm"
+                            id="project-code"
+                        >
+                            C.S. Fernando Carbajal Segura - El Bosque
+                        </h2>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span
+                                class="px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-md text-[10px] font-bold text-white tracking-wide border border-white/20"
+                            >
+                                CUI: <span id="project-cui-display">2458921</span>
+                            </span>
+                            <span
+                                class="px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-md text-[10px] font-bold text-white tracking-wide border border-white/20"
+                            >
+                                PFIS: <span id="project-code-display">5021</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navegación por Pestañas Modernas (Segmented Control) -->
+                <div class="px-4 pt-3 pb-1 bg-slate-50/90 border-b border-slate-200/80">
+                    <div
+                        class="flex p-1 bg-slate-200/70 rounded-xl gap-1 text-xs font-bold text-slate-600"
+                    >
+                        <button
+                            id="tab-btn-resumen"
+                            onclick="switchProjectTab('resumen')"
+                            class="project-tab-btn active flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 bg-white text-blue-700 shadow-sm"
+                        >
+                            <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+                            <span>Resumen</span>
+                        </button>
+                        <button
+                            id="tab-btn-tecnico"
+                            onclick="switchProjectTab('tecnico')"
+                            class="project-tab-btn flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 hover:text-slate-900 text-slate-600"
+                        >
+                            <i data-lucide="building-2" class="w-3.5 h-3.5"></i>
+                            <span>Técnico</span>
+                        </button>
+                        <button
+                            id="tab-btn-cronograma"
+                            onclick="switchProjectTab('cronograma')"
+                            class="project-tab-btn flex-1 py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 hover:text-slate-900 text-slate-600"
+                        >
+                            <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
+                            <span>Cronograma</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Contenedor Dinámico de Información del Proyecto -->
+                <div class="p-4 space-y-4" id="project-info">
+                    <!-- Se inyecta dinámicamente según la pestaña seleccionada -->
+                </div>
+
+                <!-- Finalidad del Proyecto (visible siempre o en Resumen) -->
+                <div
+                    id="project-description-container"
+                    class="px-4 py-3 bg-slate-50/70 border-t border-slate-200/70"
+                >
+                    <div
+                        class="flex items-center gap-1.5 mb-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider"
+                    >
+                        <i data-lucide="target" class="w-3.5 h-3.5 text-blue-600"></i>
+                        <span>Finalidad y Alcance</span>
+                    </div>
+                    <p
+                        class="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-slate-200/80 shadow-sm"
+                        id="project-description"
+                    >
+                        Seleccione un proyecto en el mapa para cargar su descripción detallada.
+                    </p>
+                </div>
+
+                <!-- Botones de Acción Ejecutivos (Reporte PDF y Línea de Tiempo) -->
+                <div
+                    id="project-panel-btn"
+                    class="p-4 bg-white border-t border-slate-200/80 shadow-inner"
+                >
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <button
+                            id="report-btn"
+                            name="report-btn"
+                            class="action-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all transform active:scale-95"
+                        >
+                            <i data-lucide="file-text" class="w-4 h-4"></i>
+                            <span>Ver Reporte PDF</span>
+                        </button>
+                        <button
+                            id="history-btn"
+                            name="history-btn"
+                            class="action-btn flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 shadow-sm hover:shadow transition-all transform active:scale-95"
+                        >
+                            <i data-lucide="history" class="w-4 h-4 text-blue-600"></i>
+                            <span>Línea de Tiempo</span>
+                        </button>
+                        <button
+                            id="help-document-btn"
+                            name="help-document-btn"
+                            class="action-btn col-span-2 hidden flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-all"
+                        >
+                            <i data-lucide="bookmark" class="w-3.5 h-3.5"></i>
+                            <span>Ficha Técnica y Resumen</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Leyenda Flotante Ultra-Moderna y Compacta (Floating Dock Capsule) -->
+        <div id="legend-panel" class="absolute bottom-5 left-5 z-20 select-none">
+            <div
+                class="glass-panel rounded-2xl p-1 shadow-xl shadow-slate-900/10 border border-white/80 backdrop-blur-xl bg-white/95 flex items-center gap-1 transition-all duration-300"
+            >
+                <!-- Botón de Expansión / Colapso -->
+                <button
+                    id="legend-toggle-btn"
+                    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100/80 transition-all cursor-pointer group"
+                    title="Minimizar / Expandir leyenda"
+                >
+                    <div
+                        class="w-5 h-5 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs"
+                    >
+                        <i data-lucide="layers" class="w-3 h-3"></i>
+                    </div>
+                    <span class="text-[11px] font-bold text-slate-700 tracking-tight">Leyenda</span>
+                    <i
+                        data-lucide="chevron-left"
+                        id="legend-chevron"
+                        class="w-3 h-3 text-slate-400 group-hover:text-slate-600 transition-transform duration-300"
+                    ></i>
+                </button>
+
+                <!-- Separador Vertical Delgado -->
+                <div id="legend-divider" class="w-px h-4 bg-slate-200/80"></div>
+
+                <!-- Contenedor de Estados (Cápsulas Interactivas de Filtrado) -->
+                <div
+                    id="legend-content"
+                    class="flex items-center gap-1 transition-all duration-300 overflow-hidden"
+                >
+                    <!-- Concluido -->
+                    <button
+                        onclick="filterByLegendStatus('concluded')"
+                        class="legend-status-pill flex items-center gap-1.5 px-2 py-1 rounded-xl hover:bg-purple-50 text-slate-700 hover:text-purple-900 transition-all cursor-pointer border border-transparent hover:border-purple-200/70 active:scale-95"
+                        title="Filtrar proyectos concluidos"
+                    >
+                        <span
+                            class="w-2 h-2 rounded-full bg-purple-600 shadow-xs shadow-purple-500/50"
+                        ></span>
+                        <span class="legend-label text-[11px] font-semibold text-slate-600"
+                            >Concluido</span
+                        >
+                        <span
+                            id="concluded-count"
+                            class="text-[10px] font-extrabold px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-700 leading-none"
+                            >1</span
+                        >
+                    </button>
+
+                    <!-- En Ejecución -->
+                    <button
+                        onclick="filterByLegendStatus('execution')"
+                        class="legend-status-pill flex items-center gap-1.5 px-2 py-1 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-emerald-900 transition-all cursor-pointer border border-transparent hover:border-emerald-200/70 active:scale-95"
+                        title="Filtrar proyectos en ejecución"
+                    >
+                        <span
+                            class="w-2 h-2 rounded-full bg-emerald-500 shadow-xs shadow-emerald-500/50 animate-pulse"
+                        ></span>
+                        <span class="legend-label text-[11px] font-semibold text-slate-600"
+                            >En Ejecución</span
+                        >
+                        <span
+                            id="execution-count"
+                            class="text-[10px] font-extrabold px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-700 leading-none"
+                            >1</span
+                        >
+                    </button>
+
+                    <!-- Programado -->
+                    <button
+                        onclick="filterByLegendStatus('programmed')"
+                        class="legend-status-pill flex items-center gap-1.5 px-2 py-1 rounded-xl hover:bg-amber-50 text-slate-700 hover:text-amber-900 transition-all cursor-pointer border border-transparent hover:border-amber-200/70 active:scale-95"
+                        title="Filtrar proyectos programados"
+                    >
+                        <span
+                            class="w-2 h-2 rounded-full bg-amber-500 shadow-xs shadow-amber-500/50"
+                        ></span>
+                        <span class="legend-label text-[11px] font-semibold text-slate-600"
+                            >Programado</span
+                        >
+                        <span
+                            id="programmed-count"
+                            class="text-[10px] font-extrabold px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-700 leading-none"
+                            >1</span
+                        >
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra Flotante de KPIs Ejecutivos (Métricas Globales de Cartera) -->
+        <div id="executive-kpi-bar" class="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 select-none pointer-events-auto transition-all duration-300">
+            <div class="glass-panel rounded-2xl p-1.5 shadow-2xl shadow-slate-950/20 border border-white/80 backdrop-blur-xl bg-white/95 flex items-center gap-2">
+                
+                <!-- Botón Colapsar / Expandir KPIs -->
+                <button id="kpi-toggle-btn" onclick="toggleKpiBar()"
+                    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer group"
+                    title="Minimizar / Expandir Métricas">
+                    <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs">
+                        <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
+                    </div>
+                    <div class="text-left hidden sm:block">
+                        <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 leading-tight">Cartera</div>
+                        <div class="text-[9px] font-medium text-slate-500 leading-tight" id="kpi-project-count">3 Obras</div>
+                    </div>
+                    <i data-lucide="chevron-down" id="kpi-chevron" class="w-3 h-3 text-slate-400 group-hover:text-slate-600 transition-transform duration-300 ml-0.5"></i>
+                </button>
+
+                <!-- Separador -->
+                <div id="kpi-sep-1" class="w-px h-6 bg-slate-200"></div>
+
+                <!-- Contenedor de Métricas (Colapsable) -->
+                <div id="kpi-metrics-container" class="flex items-center gap-2 transition-all duration-300">
+                    
+                    <!-- KPI 1: Inversión Total PIM -->
+                    <div class="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-50/80 border border-slate-200/60 shadow-2xs">
+                        <div class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="coins" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Inversión PIM</div>
+                            <div class="text-xs font-extrabold text-slate-900 leading-tight" id="kpi-total-investment">S/ 136.1 M</div>
+                        </div>
+                    </div>
+
+                    <!-- KPI 2: Población Beneficiaria -->
+                    <div class="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-50/80 border border-slate-200/60 shadow-2xs">
+                        <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Beneficiarios</div>
+                            <div class="text-xs font-extrabold text-slate-900 leading-tight" id="kpi-total-beneficiaries">265.7k hab.</div>
+                        </div>
+                    </div>
+
+                    <!-- KPI 3: Avance Físico Promedio -->
+                    <div class="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-50/80 border border-slate-200/60 shadow-2xs">
+                        <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                            <i data-lucide="trending-up" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>Avance Físico</span>
+                                <span class="text-[9px] font-extrabold text-blue-600" id="kpi-avg-progress-label">56.2%</span>
+                            </div>
+                            <div class="w-20 bg-slate-200 rounded-full h-1.5 overflow-hidden mt-1 border border-slate-300/40">
+                                <div id="kpi-avg-progress-bar" class="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-700" style="width: 56.2%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts de la Aplicación -->
+        <script src="js/mockData.js"></script>
+        <script src="js/notificationHelper.js"></script>
+        <script src="js/utils.js"></script>
+        <script src="js/kpiService.js"></script>
+        <script src="js/pdfViewer.js"></script>
+        <script src="js/projectService.js"></script>
+        <script src="js/timelineService.js"></script>
+        <script src="js/geoprocessingService.js"></script>
+        <script src="js/timelineModal.js"></script>
+        <script src="js/projectPanel.js"></script>
+        <script src="js/layersPanel.js"></script>
+        <script src="js/searchService.js"></script>
+        <script src="js/searchManager.js"></script>
+        <script src="js/mapControls.js"></script>
+        <script src="js/zonalFilter.js"></script>
+        <script src="js/leafletMap.js"></script>
+
+        <!-- Inicialización Principal -->
+        <script>
+            window.AppGlobals = window.AppGlobals || {};
+            window.notificationHelper = new NotificationHelper();
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                console.log('Iniciando Visor de Proyectos (Modo Demo)...');
+
+                // 1. Inicializar servicios locales
+                initializeProjectService();
+                initializeTimelineService();
+                initializeGeoprocessingService();
+                initializeProjectPanel();
+                initializeLayersPanel();
+                initializeTimelineModal();
+
+                if (typeof window.ZonalFilter !== 'undefined') {
+                    window.ZonalFilter.initialize();
+                }
+
+                // 2. Inicializar iconos
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+
+                // 3. Inicializar mapa moderno Leaflet
+                initializeModernMap();
+
+                // 4. Inicializar buscador
+                window.searchManager = new SearchManager();
+                window.searchManager.initialize();
+
+                // 5. Inicializar KPIs Globales de Cartera
+                if (typeof updateExecutiveKpis === 'function') {
+                    updateExecutiveKpis();
+                }
+
+                // 6. Configurar dropdown de proyectos superior
+                const projectDropdown = document.getElementById('quick-project-dropdown');
+                if (projectDropdown) {
+                    projectDropdown.addEventListener('change', (e) => {
+                        const code = e.target.value;
+                        if (code && window.selectProjectByCode) {
+                            window.selectProjectByCode(code);
+                        }
+                    });
+                }
+
+                // 6. Mensaje de bienvenida
+                setTimeout(() => {
+                    window.notificationHelper.info(
+                        'Seleccione un proyecto en el mapa o en el menú superior para ver su información y reporte PDF.',
+                        {
+                            title: 'Visor de Proyectos Listo',
+                            duration: 4000
+                        }
+                    );
+                }, 500);
+            });
+
+            // Alternar capas base (CartoDB vs Satelital vs OpenStreetMap - 100% libre sin API key)
+            function switchBasemap(type) {
+                const map = window.AppGlobals.leafletMap;
+                const layers = window.AppGlobals.baseLayers;
+                const voyagerBtn = document.getElementById('basemap-voyager-btn');
+                const satBtn = document.getElementById('basemap-satellite-btn');
+                const osmBtn = document.getElementById('basemap-osm-btn');
+
+                if (!map || !layers) return;
+
+                // Remover capas base existentes
+                ['carto', 'osm', 'satellite', 'light'].forEach((key) => {
+                    if (layers[key] && map.hasLayer(layers[key])) {
+                        map.removeLayer(layers[key]);
+                    }
+                });
+
+                const inactiveClass =
+                    'px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-white/80 transition flex items-center gap-1.5 cursor-pointer';
+                const activeClass =
+                    'px-2.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer';
+
+                if (voyagerBtn) voyagerBtn.className = inactiveClass;
+                if (satBtn) satBtn.className = inactiveClass;
+                if (osmBtn) osmBtn.className = inactiveClass;
+
+                if (type === 'satellite') {
+                    if (layers.satellite) layers.satellite.addTo(map);
+                    if (satBtn) satBtn.className = activeClass;
+                    if (window.notificationHelper) {
+                        window.notificationHelper.info(
+                            'Capa Satelital Híbrida de Alta Resolución (Esri World Imagery) activada.',
+                            {
+                                title: 'Vista Satelital',
+                                duration: 2500,
+                            }
+                        );
+                    }
+                } else if (type === 'osm') {
+                    if (layers.osm) layers.osm.addTo(map);
+                    if (osmBtn) osmBtn.className = activeClass;
+                } else {
+                    if (layers.carto) layers.carto.addTo(map);
+                    if (voyagerBtn) voyagerBtn.className = activeClass;
+                }
+            }
+
+            // Filtrar marcadores por estado
+            function filterByStatusClick(status) {
+                const markers = window.AppGlobals.leafletLayers;
+                if (!markers) return;
+
+                const statusSelect = document.getElementById('quick-status-dropdown');
+                if (statusSelect && statusSelect.value !== status) {
+                    statusSelect.value = status;
+                }
+
+                const allProjects = window.LOCAL_PROJECTS_DATA || [];
+
+                if (status === 'all') {
+                    Object.values(markers).forEach((l) => l.addTo(window.AppGlobals.leafletMap));
+                    if (typeof updateExecutiveKpis === 'function') {
+                        updateExecutiveKpis(allProjects);
+                    }
+                } else {
+                    Object.keys(markers).forEach((k) => {
+                        if (k === status) {
+                            markers[k].addTo(window.AppGlobals.leafletMap);
+                        } else {
+                            window.AppGlobals.leafletMap.removeLayer(markers[k]);
+                        }
+                    });
+                    if (typeof updateExecutiveKpis === 'function') {
+                        updateExecutiveKpis(allProjects.filter((p) => p.statusCode === status));
+                    }
+                }
+            }
+            window.filterByLegendStatus = filterByStatusClick;
+        </script>
+    </body>
+</html>

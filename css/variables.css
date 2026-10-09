@@ -1,0 +1,10 @@
+﻿/* ==========================================
+   VARIABLES Y CONFIGURACIÓN BASE
+   ========================================== */
+:root {
+    /*Colores de la leyenda*/
+    --legend-status-color-concluded: #e074ff;
+    --legend-status-color-execution: #37a800;
+    --legend-status-color-programmed: #f1f118;
+    --legend-status-color-pending: #ffd37f;
+}
